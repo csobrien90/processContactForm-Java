@@ -25,10 +25,10 @@ To build and run this application, you will need:
 
 To use the application, make a POST request to the resource /{email} with a JSON body that contains the following fields:
 
-`email`: the sender's email address
-`subject`: the subject of the message
-`message`: the content of the message
-`token`: a reCaptcha site key
+- `email`: the sender's email address
+- `subject`: the subject of the message
+- `message`: the content of the message
+- `token`: a reCaptcha site key
 
 The application will send an email to the configured recipient using SES.
 
