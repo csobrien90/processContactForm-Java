@@ -23,6 +23,10 @@ import com.google.gson.GsonBuilder;
 // Import Java dependencies
 import java.util.Map;
 import java.util.HashMap;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 public class Handler implements RequestHandler<APIGatewayProxyRequestEvent, String> {
 	Gson gson = new GsonBuilder().setPrettyPrinting().create();
@@ -56,7 +60,9 @@ public class Handler implements RequestHandler<APIGatewayProxyRequestEvent, Stri
 		String token = body.get("token").toString();
 
 		// Validate reCaptcha
-		if (!reCaptchaIsValid(token)) {
+		String reCaptchaSecret = System.getenv("RECAPTCHA_SECRET_" + params.get("email").toString().toUpperCase());
+		logger.log("reCaptcha secret: " + reCaptchaSecret);
+		if (!reCaptchaIsValid(token, reCaptchaSecret, logger)) {
 			HashMap error = new HashMap();
 			error.put("statusCode", 422);
 			error.put("message", "reCaptcha validation failed");
@@ -69,14 +75,24 @@ public class Handler implements RequestHandler<APIGatewayProxyRequestEvent, Stri
 		if (targetEmail == null) {
 			HashMap error = new HashMap();
 			error.put("statusCode", 400);
-			error.put("message", "Email address not found for " + params.get("email"));
+			error.put("message", "Target email address not found for " + params.get("email"));
+			logger.log(gson.toJson(error));
+			return gson.toJson(error);
+		}
+
+		// Lookup from email address
+		String fromAddress = System.getenv("FROM_ADDRESS_" + params.get("email").toString().toUpperCase());
+		if (fromAddress == null) {
+			HashMap error = new HashMap();
+			error.put("statusCode", 400);
+			error.put("message", "From email address not found for " + params.get("email"));
 			logger.log(gson.toJson(error));
 			return gson.toJson(error);
 		}
 
 		// Send email with Amazon SES
 		// TODO: SWITCH OUT MY EMAIL ADDRESS FOR THE TARGET EMAIL ADDRESS AFTER TESTING 
-		String emailResponse = sendEmail("obrien.music@gmail.com", "obrien.music@gmail.com", submitterEmail, subject, message, logger);
+		String emailResponse = sendEmail(fromAddress, "obrien.music@gmail.com", submitterEmail, subject, message, logger);
 		Map emailResponseMap = gsonUtil.fromJson(emailResponse, Map.class);
 		if (!(boolean)emailResponseMap.get("success")) {
 			HashMap error = new HashMap();
@@ -93,8 +109,42 @@ public class Handler implements RequestHandler<APIGatewayProxyRequestEvent, Stri
 		return gson.toJson(response);
 	}
 
-	private boolean reCaptchaIsValid(String token) {
-		return true;
+	private boolean reCaptchaIsValid(String token, String secret, LambdaLogger logger) {
+		// Build HTTP request body
+		String postBodyString = "secret=" + secret + "&response=" + token;
+		logger.log("POST BODY: " + postBodyString);
+		
+		// Make HTTP request to Google reCaptcha API
+		HttpRequest request = null;
+		try {
+			request = HttpRequest.newBuilder()
+				.uri(new URI("https://google.com/recaptcha/api/siteverify"))
+				.headers("Content-Type", "application/x-www-form-urlencoded", "Accept", "*/*")
+				.POST(HttpRequest.BodyPublishers.ofString(postBodyString))
+				.build();
+		} catch (Exception e) {
+			logger.log("ERROR: " + e.getMessage());
+			return false;
+		}
+
+		// Get response from Google reCaptcha API
+		try {
+			HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+			logger.log("RESPONSE: " + response.body());
+
+			// Parse response
+			Map responseMap = gsonUtil.fromJson(response.body(), Map.class);
+
+			// Return true if reCaptcha was valid
+			if (responseMap.get("success") != null && (boolean)responseMap.get("success")) {
+				return true;
+			} else {
+				return false;
+			}
+		} catch (Exception e) {
+			logger.log("ERROR: " + e.getMessage());
+			return false;
+		}
 	}
 
 	private String sendEmail(String from, String to, String submitterEmail, String subject, String message, LambdaLogger logger) {

@@ -17,7 +17,7 @@ To build and run this application, you will need:
 ### Installing
 
 - Clone this repository to your local machine
-- Run mvn package to build the application
+- Run `mvn package` to build the application
 - Deploy the created target/process-contact-form-0.1.0.jar file to Lambda
 - Set the required environment variables (`TARGET_{EMAIL}`, `SEND_FROM_{EMAIL}`, and `RECAPTCHA_KEY_{EMAIL}`) in the Lambda function
 
